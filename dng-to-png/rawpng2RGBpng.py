@@ -153,9 +153,11 @@ def save_rgb_image(rgb, output_path):
     rgb_uint8 = (rgb * 255).astype(np.uint8)
     img = Image.fromarray(rgb_uint8)
     img.save(output_path)  # Overwrites if file exists
+    print(f"[OK] Saved: {output_path}")
     
 
 def process_single_image(image_path):
+    print(f"[INFO] Processing: {image_path} on process {os.getpid()}")
     try:
         rgb = process_bayer_image(image_path)
         raw_png_dir = os.path.dirname(image_path)
