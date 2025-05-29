@@ -37,6 +37,7 @@ def grayworld_white_balance(rgb):
     #gray_avg = [0.5, 0.5, 0.5]  # Target gray average
     scale = gray_avg / (avg_rgb + 1e-8)
     corrected = img*scale
+    print(scale)
     return np.clip(corrected, 0.0, 1.0)
 
 def white_point_white_balance(rgb):
@@ -86,9 +87,9 @@ def process_bayer_image(path):
     bayer = load_bayer_image(path)
     bayer = white_black_normalization(bayer, path)
     rgb = downsample_demosaic_gbrg(bayer)
-    #rgb = min_max_normalize(rgb)
     rgb = grayworld_white_balance(rgb)
-    rgb = apply_gamma(rgb, 3.0)
+    #rgb = white_point_white_balance(rgb)
+    rgb = apply_gamma(rgb, 2.0)
     return rgb
 
 def show_image(img):
@@ -99,6 +100,6 @@ def show_image(img):
 
 # Example usage
 if __name__ == "__main__":
-    image_path = "C:\\Users\\marco\\Desktop\\TesiAWB\\VideoProvaFrames\\008-VIDEO_25mm-250430_103600.0\\raw_png\\frame_000140_raw.png"  # Replace with your actual image path
+    image_path = "C:\\Users\\marco\\Desktop\\TesiAWB\\VideoProvaFrames\\008-VIDEO_25mm-250430_103600.0\\raw_png\\frame_000080_raw.png"  # Replace with your actual image path
     processed = process_bayer_image(image_path)
     show_image(processed)
