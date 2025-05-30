@@ -5,32 +5,55 @@ import rawpy
 import imageio
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import subprocess
+
+
+def get_as_shot_neutral_exiftool(path):
+    try:
+        result = subprocess.run(
+            ['exiftool', '-AsShotNeutral', '-j', path],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        import json
+        metadata = json.loads(result.stdout)
+        neutral = metadata[0].get("AsShotNeutral")
+        if neutral:
+            # Ensure list of floats
+            return [float(x) for x in neutral.strip().split()]
+    except Exception as e:
+        print(f"[WARN] Couldn't extract AsShotNeutral from {path}: {e}")
+    return None
 
 def process_file(input_path, output_path):
     try:
-        # if os.path.exists(output_path):
-        #     return f"[SKIP] Already exists: {os.path.basename(output_path)}"
-
         with rawpy.imread(input_path) as raw:
             raw_image = raw.raw_image_visible
             raw_image_uint16 = raw_image.astype(np.uint16)
             imageio.imwrite(output_path, raw_image_uint16)
-            
-            #extract metadata
+
+            # Extract black/white levels
             black = raw.black_level_per_channel
             white = (raw.camera_white_level_per_channel 
                      if raw.camera_white_level_per_channel is not None 
-                     else [raw.white_level]*4)
-            metadata = {
-                "frame": os.path.basename(input_path),
-                "black_level_per_channel": black,
-                "white_level_per_channel": white
-            }
-            
+                     else [raw.white_level] * 4)
+
+        # Extract AsShotNeutral using ExifTool
+        as_shot_neutral = get_as_shot_neutral_exiftool(input_path)
+
+        metadata = {
+            "frame": os.path.basename(input_path),
+            "black_level_per_channel": black,
+            "white_level_per_channel": white,
+            "as_shot_neutral": as_shot_neutral
+        }
+
         return metadata
     except Exception as e:
         print(f"[ERROR] Failed to process {os.path.basename(input_path)}: {e}")
         return None
+
 
 def process_directory(base_path, max_workers=8):
     # check if it's a valid directory

@@ -18,75 +18,96 @@ def downsample_demosaic_gbrg(bayer):
     rgb = np.stack([R, G, B], axis=2)
     return rgb
 
-def apply_dynamic_gamma(img, min_gamma=0.5, max_gamma=5.0):
-    luminance = np.mean(img, axis=2)
-    mean_luminance = np.mean(luminance)
 
-    if mean_luminance <= 0:
-        gamma = 1.0  # fallback
-    else:
-        gamma = np.log(0.5) / np.log(mean_luminance + 1e-8)
-        gamma = np.clip(gamma, min_gamma, max_gamma)
-
-    print(f"[INFO]Dynamic gamma applied: {gamma:.3f}")
-    return np.clip(np.power(img, 1.0 / gamma), 0.0, 1.0)
-
-
-
-def apply_percentile_gamma(img, target=0.95, percentile=90, min_gamma=0.5, max_gamma=8.0):
-    luminance = np.mean(img, axis=2)
-    p = np.percentile(luminance, percentile)
-
-    if p <= 0:
-        gamma = 1.0  # fallback
-    else:
-        gamma = np.log(target) / np.log(p + 1e-8)
-        gamma = np.clip(gamma, min_gamma, max_gamma)
-
-    print(f"[INFO]Percentile luminance: {p:.4f}, Gamma applied: {gamma:.3f}")
-    return np.clip(np.power(img, 1.0 / gamma), 0.0, 1.0)
-
-
-def apply_brightening_gamma(img, target_brightness=0.5, min_gamma=0.5, max_gamma=5.0):
-    luminance = np.mean(img, axis=2)
-    median_luminance = np.median(luminance)
-
-    # If image is very dark, apply stronger gamma boost
-    if median_luminance <= 0:
-        gamma = 1.0
-    else:
-        gamma = np.log(target_brightness) / np.log(median_luminance + 1e-8)
-        gamma = np.clip(gamma, min_gamma, max_gamma)
-
-    print(f"[INFO]Median luminance: {median_luminance:.4f}, Gamma applied: {gamma:.3f}")
-    return np.clip(np.power(img, 1.0 / gamma), 0.0, 1.0)
-
-
-def apply_auto_brightening_gamma(img, target_percentile=90, target_output=0.8, min_gamma=0.5, max_gamma=3.0):
-    luminance = np.mean(img, axis=2)
-    p_val = np.percentile(luminance, target_percentile)
-
-    # If the image is very dark, p_val will be low, which should cause gamma < 1 (brightening)
-    if p_val <= 0:
-        gamma = 1.0
-    else:
-        gamma = np.log(target_output) / np.log(p_val + 1e-8)
-
-    gamma = np.clip(gamma, min_gamma, max_gamma)
-
-    print(f"[INFO]90th percentile luminance: {p_val:.4f}, Gamma applied: {gamma:.3f}")
-
-    return np.clip(np.power(img, 1.0 / gamma), 0.0, 1.0)
 
 
 
 def grayworld_white_balance(rgb):
+
     img = rgb.astype(np.float32)
-    avg_rgb = np.mean(img, axis=(0, 1))
-    gray_avg = np.mean(avg_rgb)
-    scale = gray_avg / (avg_rgb + 1e-8)
-    corrected = img * scale
-    return np.clip(corrected, 0.0, 1.0)
+    
+    avg_r = np.mean(img[:, :, 0])
+    avg_g = np.mean(img[:, :, 1])
+    avg_b = np.mean(img[:, :, 2])
+    
+    scale_r = avg_g / (avg_r + 1e-8)
+    scale_b = avg_g / (avg_b + 1e-8)
+    
+    img[:, :, 0] *= scale_r  # R
+    img[:, :, 2] *= scale_b  # B
+
+    # G stays the same
+    return np.clip(img, 0.0, 1.0)
+
+def white_patch_white_balance(rgb):
+    img = rgb.astype(np.float32)
+    max_rgb = np.max(img, axis=(0, 1))
+    scale = 1.0 / (max_rgb + 1e-8)
+    img *= scale
+    return np.clip(img, 0.0, 1.0)
+
+def histogram_white_balance(rgb, top_percent=5.0):
+    img = rgb.astype(np.float32)
+    h, w, _ = img.shape
+    flat_img = img.reshape(-1, 3)
+
+    # Compute luminance for each pixel
+    luminance = np.mean(flat_img, axis=1)
+
+    # Determine the threshold to keep only top X% brightest pixels
+    threshold = np.percentile(luminance, 100 - top_percent)
+
+    # Mask the top X% brightest pixels
+    top_pixels = flat_img[luminance >= threshold]
+
+    if len(top_pixels) == 0:
+        print("[WARN] No pixels selected for white balancing.")
+        return rgb
+
+    # Calculate average RGB of selected bright pixels
+    avg_rgb = np.mean(top_pixels, axis=0)
+    scale = 1.0 / (avg_rgb + 1e-8)
+
+    # Apply scaling
+    balanced = img * scale
+    return np.clip(balanced, 0.0, 1.0)
+
+
+def apply_as_shot_neutral_white_balance(rgb, image_path):
+
+    def dng_name_from_png(png_name):
+        base = os.path.splitext(png_name)[0]
+        if base.endswith('_raw'):
+            base = base[:-4]
+        return base + '.dng'
+
+    # Load metadata
+    dir = os.path.dirname(image_path)
+    json_path = os.path.join(dir, "raw_metadata.json")
+    with open(json_path, 'r') as f:
+        metadata = json.load(f)
+    
+    target_dng = dng_name_from_png(os.path.basename(image_path))
+    entry = next((m for m in metadata if m["frame"] == target_dng), None)
+    if entry is None:
+        raise ValueError(f"Metadata for {target_dng} not found in {json_path}.")
+    
+    neutral = entry.get("as_shot_neutral")
+    if neutral is None:
+        print(f"[WARN] AsShotNeutral not found for {target_dng}. Skipping white balance.")
+        return rgb  # fallback: no correction
+    
+    neutral = np.array(neutral, dtype=np.float32)
+    # Normalize relative to green (middle channel)
+    scale = neutral[1] / neutral  # G / (R, G, B)
+    
+    img = rgb.astype(np.float32)
+    img[:, :, 0] *= scale[0]  # R
+    img[:, :, 1] *= scale[1]  # G
+    img[:, :, 2] *= scale[2]  # B
+
+    return np.clip(img, 0.0, 1.0)
+
 
 def white_black_normalization(rgb, image_path):
     def dng_name_from_png(png_name):
@@ -121,10 +142,6 @@ def white_black_normalization(rgb, image_path):
 
 
 def normalize_brightness(img, target_brightness=0.5, percentile=80):
-    """
-    Normalize image brightness by scaling pixel values so that
-    a given percentile of luminance hits the target_brightness.
-    """
     img = img.astype(np.float32)
     luminance = np.mean(img, axis=2)
     current = np.percentile(luminance, percentile)
@@ -144,9 +161,12 @@ def process_bayer_image(path):
     bayer = load_bayer_image(path)
     bayer = white_black_normalization(bayer, path)
     rgb = downsample_demosaic_gbrg(bayer)
-    rgb = grayworld_white_balance(rgb)
+    #rgb = grayworld_white_balance(rgb)
+    #rgb = white_patch_white_balance(rgb)
+    #rgb = histogram_white_balance(rgb, top_percent=15.0)
+    rgb = apply_as_shot_neutral_white_balance(rgb, path)
+    
     rgb = normalize_brightness(rgb)
-   # rgb = apply_auto_brightening_gamma(rgb)
     return rgb
 
 def save_rgb_image(rgb, output_path):
@@ -162,7 +182,7 @@ def process_single_image(image_path):
         rgb = process_bayer_image(image_path)
         raw_png_dir = os.path.dirname(image_path)
         parent_dir = os.path.dirname(raw_png_dir)
-        output_dir = os.path.join(parent_dir, "processed_RGB_png")
+        output_dir = os.path.join(parent_dir, "processed_as_shot_neutral_RGB_png")
         os.makedirs(output_dir, exist_ok=True)
         filename = os.path.basename(image_path).replace("_raw", "")
         output_path = os.path.join(output_dir, filename)
