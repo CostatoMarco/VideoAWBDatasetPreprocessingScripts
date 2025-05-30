@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -205,6 +206,9 @@ def process_all_images(parent_dir):
 
 # Entry point
 if __name__ == "__main__":
-    parent_directory = "C:\\Users\\marco\\Desktop\\TesiAWB\\VideoProvaFrames"
+    if len(sys.argv) < 2:
+        print("Usage: python convert_dng_to_raw_png.py <path_to_base_directory>")
+        sys.exit(1)
+    parent_directory = sys.argv[1]
     process_all_images(parent_directory)
 
