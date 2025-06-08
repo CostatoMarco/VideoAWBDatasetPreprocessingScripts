@@ -5,10 +5,11 @@ import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
 from multiprocessing import Pool
+import cv2
 
 def load_bayer_image(path):
-    img = Image.open(path).convert("L")  # Ensure grayscale
-    return np.array(img, dtype=np.float32)
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED).astype(np.float32)
+    return img
 
 def downsample_demosaic_gbrg(bayer):
     R = bayer[1::2, 0::2]
@@ -25,20 +26,10 @@ def downsample_demosaic_gbrg(bayer):
 
 def grayworld_white_balance(rgb):
 
-    img = rgb.astype(np.float32)
-    
-    avg_r = np.mean(img[:, :, 0])
-    avg_g = np.mean(img[:, :, 1])
-    avg_b = np.mean(img[:, :, 2])
-    
-    scale_r = avg_g / (avg_r + 1e-8)
-    scale_b = avg_g / (avg_b + 1e-8)
-    
-    img[:, :, 0] *= scale_r  # R
-    img[:, :, 2] *= scale_b  # B
-
-    # G stays the same
-    return np.clip(img, 0.0, 1.0)
+    gw = rgb.mean(axis=(0,1), keepdims=True)
+    gw = gw / np.linalg.norm(gw)
+    gw_corrected = (rgb / gw).clip(0,1)
+    return gw_corrected
 
 def white_patch_white_balance(rgb):
     img = rgb.astype(np.float32)
@@ -133,6 +124,7 @@ def white_black_normalization(rgb, image_path):
     raw = rgb.astype(np.float32)
     h, w = raw.shape
     norm = np.zeros_like(raw, dtype=np.float32)
+    print (f"[INFO] Normalizing {target_dng} with black {black} and white {white}")
     norm[0::2, 0::2] = (raw[0::2, 0::2] - G_bl) / (G_wh - G_bl)
     norm[0::2, 1::2] = (raw[0::2, 1::2] - B_bl) / (B_wh - B_bl)
     norm[1::2, 0::2] = (raw[1::2, 0::2] - R_bl) / (R_wh - R_bl)
@@ -167,7 +159,7 @@ def process_bayer_image(path):
     #rgb = histogram_white_balance(rgb, top_percent=15.0)
     rgb = apply_as_shot_neutral_white_balance(rgb, path)
     
-    rgb = normalize_brightness(rgb)
+    #rgb = normalize_brightness(rgb)
     return rgb
 
 def save_rgb_image(rgb, output_path):
