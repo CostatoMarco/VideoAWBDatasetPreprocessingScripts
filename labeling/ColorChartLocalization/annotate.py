@@ -3,7 +3,10 @@ import cv2
 import numpy as np
 import sys
 import os
-sys.path.insert(0, './ultralytics')
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(current_dir))  # ColorChartLocalization
+sys.path.insert(0, os.path.join(current_dir, "ultralytics"))  # optional
+sys.path.insert(0, os.path.join(current_dir, "find_patches"))
 from ultralytics import YOLO
 import matplotlib.pyplot as plt
 from find_patches.findpatches import findpatches, get_triplets
@@ -23,8 +26,8 @@ def annotate(image_path, out_file, segment_background, device, get_viz):
 
     out_file_name = out_file if out_file is not None else image_path.split(".")[0] + ".csv"
     
-    detector = YOLO('ultralytics/runs/detect/train/weights/best.pt') # Initialize the detection model
-    segmenter = YOLO('ultralytics/runs/segment/train/weights/best.pt') if segment_background else None # Initialize the segmentation model if needed
+    detector = YOLO(r'C:\Users\marco\Desktop\TesiAWB\labeling\ColorChartLocalization\ultralytics\runs\detect\train\weights\best.pt') # Initialize the detection model
+    segmenter = YOLO(r'C:\Users\marco\Desktop\TesiAWB\labeling\ColorChartLocalization\ultralytics\runs\detect\train\weights\best.pt') if segment_background else None # Initialize the segmentation model if needed
 
     img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
     
