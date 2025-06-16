@@ -47,15 +47,15 @@ def label_image(image_path, out_csv_file=None, segment_background=False, device=
 
     
     #co mpute the white balance
-    white_balanced_rgb = rgb / np.array(white_triplet, dtype=np.float32)
+    wbParameters = np.divide(255, white_triplet, out=np.zeros_like(white_triplet), where=white_triplet != 0)
+    white_balanced_rgb = rgb * wbParameters
     #clip the values to [0, 1]
-    white_balanced_rgb = np.clip(white_balanced_rgb, 0, 1)
+    white_balanced_rgb = np.clip(white_balanced_rgb, 0, 255)/255.0
     #save the white balanced image if out_image_path is provided
     if out_image_path is not None:
         cv2.imwrite(out_image_path, (white_balanced_rgb * 255).astype(np.uint8))
-    white_triplet_np = np.array(white_triplet, dtype=np.float32)
-    reciprocal = np.divide(1.0, white_triplet_np, out=np.zeros_like(white_triplet_np), where=white_triplet_np != 0)
-    return reciprocal
+
+    return wbParameters.tolist()  # Return the white balance triplet as a list
 
 def process_frame(image_path, out_csv_file=None, segment_background=False, device='cpu', get_viz=False, out_image_path=None, label_file=None):
     """
