@@ -66,6 +66,15 @@ def annotate(image_path, out_file, segment_background, device, get_viz):
 
         for i, triplet in enumerate(rgb_triplets):
             row[f"{patches_names[i]}"] = triplet.tolist()
+            if patches_names[i] == "White":
+                # patches[i] is top-left (y, x)
+                y_top_left, x_top_left = patches[i]
+                row["White_coords"] = [x_top_left, y_top_left]
+                row["White_radius"] = r
+
+
+
+
         
         out.append(row) # Append the row to the output list
 
