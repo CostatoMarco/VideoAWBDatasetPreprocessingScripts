@@ -50,8 +50,15 @@ def annotate(image_path, out_file, segment_background, device, get_viz):
             patches, radius, viz = findpatches(crop, mask=mask, get_viz = get_viz, t1=80, t2=170, tolerance=np.pi/9) # Find the patches in the image
 
             if get_viz:
-                plt.imshow(viz[:,:,::-1])
-                plt.show()
+                # plt.imshow(viz[:,:,::-1])
+                # plt.show()
+                viz = cv2.cvtColor(viz, cv2.COLOR_BGR2RGB)
+                base_name = os.path.splitext(os.path.basename(image_path))[0]
+                viz_folder = os.path.join(os.path.dirname(out_file_name), "viz_images")
+                os.makedirs(viz_folder, exist_ok=True)
+                viz_path = os.path.join(viz_folder, f"{base_name}_viz.jpg")
+                
+                cv2.imwrite(viz_path, viz) # Save the visualization image
         
         except:
             raise RuntimeError("Error finding patches")

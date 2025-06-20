@@ -21,41 +21,64 @@ def worker(args):
     except Exception as e:
         print(f"[ERROR] Failed on {folder_path}: {e}")
 
-def label_image(image_path, out_csv_file=None, segment_background=False, device='cpu', get_viz=False, out_image_path=None):
-    """
-    Labels an image with the correct white balancing triplets
-    """
-    #load the image
-    rgb = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
 
-    #extract the patches into a csv file
+def label_image(image_path, out_csv_file=None, segment_background=False, device='cpu', get_viz=False, out_image_path=None):
+    # Load and normalize the image
+    rgb = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    if rgb is None:
+        raise ValueError(f"Could not read image at path: {image_path}")
+    rgb = rgb.astype(np.float32) / 255.0  # Normalize to [0, 1]
+
+    # Extract the patches into a csv file
     try:
         annotate(image_path, out_csv_file, segment_background, device, get_viz)
     except RuntimeError as e:
-        print(f"Error during annotation: {e}")
+        print(f"[ERROR] Error during annotation: {e}")
         return None
-    # read the output csv file
+
+    # Read the output csv file
     if out_csv_file is not None:
         df = pd.read_csv(out_csv_file)
     else:
         return None
-    #select the "White" column from the dataframe
-    white_triplet = df["White"].values[0]
-    #convert the triplet to a list
-    white_triplet = [float(x) for x in white_triplet.strip('[]').split(',')]
-    
 
+    # Select the "White" column from the dataframe
+    white_triplet = df["White"].values[0]
+    white_triplet = np.array([float(x)/255 for x in white_triplet.strip('[]').split(',')], dtype=np.float32)
     
-    #co mpute the white balance
-    wbParameters = np.divide(255, white_triplet, out=np.zeros_like(white_triplet), where=white_triplet != 0)
-    white_balanced_rgb = rgb * wbParameters
-    #clip the values to [0, 1]
-    white_balanced_rgb = np.clip(white_balanced_rgb, 0, 255)/255.0
-    #save the white balanced image if out_image_path is provided
+    if get_viz:
+        coords_str = df["White_coords"].values[0]
+        x_center, y_center = [int(float(x)) for x in coords_str.strip("[]").split(",")]
+        
+
+        dot_img = rgb.copy()
+        cv2.circle(dot_img, (x_center, y_center), 5, (0, 0, 255), -1)  # Red dot
+        
+        
+        parent_folder = os.path.dirname(out_image_path)
+        filename = os.path.basename(out_image_path)
+        circle_folder = os.path.join(parent_folder, "circle_marked")
+        os.makedirs(circle_folder, exist_ok=True)
+        
+        out_circle_path = os.path.join(circle_folder, filename)
+        cv2.imwrite(out_circle_path, (dot_img * 255).astype(np.uint8))
+
+    # Compute white balance parameters
+    # wbParameters = np.divide(np.mean(white_triplet), white_triplet, out=np.zeros_like(white_triplet, dtype=np.float32), where=np.array(white_triplet) != 0)
+    # wbParameters = np.divide(white_triplet, np.linalg.norm(white_triplet) , out=np.zeros_like(white_triplet, dtype=np.float32), where=np.array(white_triplet) != 0)
+    wbParameters = white_triplet / np.linalg.norm(white_triplet)
+
+    # Apply white balancing
+    white_balanced_rgb = rgb / (wbParameters+1e-6)
+
+    # Clip the values to [0, 1]
+    white_balanced_rgb = np.clip(white_balanced_rgb, 0, 1)
+
+    # Save the white balanced image if path is provided
     if out_image_path is not None:
         cv2.imwrite(out_image_path, (white_balanced_rgb * 255).astype(np.uint8))
 
-    return wbParameters.tolist()  # Return the white balance triplet as a list
+    return wbParameters.tolist()
 
 def process_frame(image_path, out_csv_file=None, segment_background=False, device='cpu', get_viz=False, out_image_path=None, label_file=None):
     """
@@ -135,7 +158,7 @@ if __name__ == "__main__":
         sys.exit(1)
         
     filename = sys.argv[1]
-    process_all_folders_in_directory(filename, device='cuda', get_viz=False)
+    process_all_folders_in_directory(filename, device='cuda', get_viz=True, segment_background=False)
     
 
     
