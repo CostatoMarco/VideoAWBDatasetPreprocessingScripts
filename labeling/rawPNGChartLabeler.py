@@ -8,22 +8,24 @@ import os
 import torch
 import torchvision
 from multiprocessing import Pool, cpu_count
+from multiprocessing import Manager
 
 
 
 def worker(args):
-    from rawPNGChartLabeler import process_folder  # if needed to avoid circular imports or global issues
-    folder_path, segment_background, device, get_viz = args
+    from rawPNGChartLabeler import process_folder
+    folder_path, segment_background, device, get_viz, total, detected = args
     try:
         print(f"[INFO] Starting: {folder_path}")
-        process_folder(folder_path, segment_background, device, get_viz)
+        process_folder(folder_path, segment_background, device, get_viz, total, detected)
         print(f"[INFO] Finished: {folder_path}")
     except Exception as e:
         print(f"[ERROR] Failed on {folder_path}: {e}")
 
 
-def label_image(image_path, out_csv_file=None, segment_background=False, device='cpu', get_viz=False, out_image_path=None):
+def label_image(image_path, out_csv_file=None, segment_background=False, device='cpu', get_viz=False, out_image_path=None, total=None, detected=None):
     # Load and normalize the image
+    total.value += 1
     rgb = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
     if rgb is None:
         raise ValueError(f"Could not read image at path: {image_path}")
@@ -41,6 +43,8 @@ def label_image(image_path, out_csv_file=None, segment_background=False, device=
         df = pd.read_csv(out_csv_file)
     else:
         return None
+    
+    detected.value += 1 
 
     # Select the "White" column from the dataframe
     white_triplet = df["White"].values[0]
@@ -80,13 +84,13 @@ def label_image(image_path, out_csv_file=None, segment_background=False, device=
 
     return wbParameters.tolist()
 
-def process_frame(image_path, out_csv_file=None, segment_background=False, device='cpu', get_viz=False, out_image_path=None, label_file=None):
+def process_frame(image_path, out_csv_file=None, segment_background=False, device='cpu', get_viz=False, out_image_path=None, label_file=None, total=None, detected=None):
     """
     Processes a single frame and saves the white balance triplet in the video label csv file
     """
     print(f"[INFO] Processing: {image_path}")
     try:
-        white_triplet = label_image(image_path, out_csv_file, segment_background, device, get_viz, out_image_path)
+        white_triplet = label_image(image_path, out_csv_file, segment_background, device, get_viz, out_image_path, total, detected)
         if white_triplet is not None and label_file is not None:
             with open(label_file, 'a') as f:
                 relative_path = os.path.relpath(image_path, start=os.path.dirname(label_file))
@@ -96,7 +100,7 @@ def process_frame(image_path, out_csv_file=None, segment_background=False, devic
         print(f"[ERROR] Failed to process {image_path}: {e}")
         return None
     
-def process_folder(folder_path, segment_background=False, device='cpu', get_viz=False):
+def process_folder(folder_path, segment_background=False, device='cpu', get_viz=False, total=None, detected=None):
     """
     Processes every frame in the folder frame by frame, extracting white balance triplets and saving them to a CSV file.
     """
@@ -128,7 +132,9 @@ def process_folder(folder_path, segment_background=False, device='cpu', get_viz=
                 device=device,
                 get_viz=get_viz,
                 out_image_path=out_image_path,
-                label_file=video_label_file)
+                label_file=video_label_file,
+                total = total,
+                detected = detected)
             
             
             
@@ -152,11 +158,36 @@ def process_all_folders_in_directory(root_path, segment_background=False, device
     
     
 if __name__ == "__main__":
-
     if len(sys.argv) < 2:
         print("Usage: python rawPNGChartLabeler.py <path_to_base_directory>")
         sys.exit(1)
-        
+
     filename = sys.argv[1]
-    process_all_folders_in_directory(filename, device='cuda', get_viz=True, segment_background=False)
+
+    with Manager() as manager:
+        total = manager.Value('i', 0)  # 'i' for integer
+        detected = manager.Value('i', 0)
+
+        # Pass shared values into each worker
+        folder_paths = [
+            os.path.join(filename, name)
+            for name in os.listdir(filename)
+            if os.path.isdir(os.path.join(filename, name))
+        ]
+
+        args_list = [
+            (folder_path, False, 'cuda', True, total, detected)
+            for folder_path in folder_paths
+        ]
+
+        with Pool(processes=min(cpu_count(), len(args_list))) as pool:
+            pool.map(worker, args_list)
+
+        print(f"Total images processed: {total.value}")
+        print(f"Total images with detected patches: {detected.value}")
+        print(f"Percentage of images with detected patches: {(detected.value / total.value * 100):.2f}%")
     
+
+# Total images processed: 1803
+# Total images with detected patches: 1321
+# Percentage of images with detected patches: 73.27%
