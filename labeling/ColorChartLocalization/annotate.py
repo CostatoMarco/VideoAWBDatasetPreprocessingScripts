@@ -29,7 +29,8 @@ def annotate(image_path, out_file, segment_background, device, get_viz):
     detector = YOLO(r'C:\Users\marco\Desktop\TesiAWB\labeling\ColorChartLocalization\ultralytics\runs\detect\train\weights\best.pt') # Initialize the detection model
     segmenter = YOLO(r'C:\Users\marco\Desktop\TesiAWB\labeling\ColorChartLocalization\ultralytics\runs\detect\train\weights\best.pt') if segment_background else None # Initialize the segmentation model if needed
 
-    img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    img_bgr = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     
     crops = detect(img, detector, device) # Get the predictions of the detection model
 

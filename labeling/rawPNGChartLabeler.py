@@ -160,9 +160,3 @@ if __name__ == "__main__":
     filename = sys.argv[1]
     process_all_folders_in_directory(filename, device='cuda', get_viz=True, segment_background=False)
     
-
-    
-        
-    
-    
-
