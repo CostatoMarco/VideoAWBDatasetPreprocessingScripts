@@ -190,4 +190,4 @@ if __name__ == "__main__":
 
 # Total images processed: 1803
 # Total images with detected patches: 1321
-# Percentage of images with detected patches: 73.27%
+# Percentage of images with detected patches: 73.27% - 79.91% without video 15
