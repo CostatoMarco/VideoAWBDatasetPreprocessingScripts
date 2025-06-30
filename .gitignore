@@ -7,3 +7,4 @@ VideoProva*
 PROCESSED_BY_LUCA
 .vscode/settings.json
 *.pyc
+__pycache__/
