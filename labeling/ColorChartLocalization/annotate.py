@@ -37,7 +37,7 @@ def annotate(image_path, out_file, segment_background, device, get_viz):
     if len(crops) == 0:
         raise RuntimeError("Error finding patches")
     
-    crops = [crops[0]] # For now, only use the first prediction 
+    #crops = [crops[0]] # For now, only use the first prediction 
 
 
     out = []
