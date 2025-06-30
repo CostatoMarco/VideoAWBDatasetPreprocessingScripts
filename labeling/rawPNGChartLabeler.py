@@ -24,10 +24,10 @@ def slerp(v0,v1,t):
 
 def worker(args):
     from rawPNGChartLabeler import process_folder  # if needed to avoid circular imports or global issues
-    folder_path, segment_background, device, get_viz = args
+    folder_path, segment_background, device, get_viz, max_hole_size = args
     try:
         print(f"[INFO] Starting: {folder_path}")
-        process_folder(folder_path, segment_background, device, get_viz)
+        process_folder(folder_path, segment_background, device, get_viz, max_hole_size)
         print(f"[INFO] Finished: {folder_path}")
     except Exception as e:
         print(f"[ERROR] Failed on {folder_path}: {e}")
@@ -127,7 +127,7 @@ def process_frame(image_path, out_csv_file=None, segment_background=False, devic
         print(f"[ERROR] Failed to process {image_path}: {e}")
         return None
     
-def process_folder(folder_path, segment_background=False, device='cpu', get_viz=False):
+def process_folder(folder_path, segment_background=False, device='cpu', get_viz=False, max_hole_size=60):
     raw_png_folder = os.path.join(folder_path, "rgb_png")
     output_base_folder = os.path.join(folder_path, "processed_labeled_RGB_png")
     output_image_folder = os.path.join(output_base_folder, "frames")
@@ -157,9 +157,7 @@ def process_folder(folder_path, segment_background=False, device='cpu', get_viz=
         )
         frame_labels.append((filename, triplet))
 
-    # SLERP interpolation
-
-
+    # SLERP interpolation with hole size check
     interpolated_labels = []
     i = 0
     while i < len(frame_labels):
@@ -169,16 +167,16 @@ def process_folder(folder_path, segment_background=False, device='cpu', get_viz=
             i += 1
             continue
 
-        # start of missing
+        # Start of a hole
         start_idx = i - 1
         while i < len(frame_labels) and frame_labels[i][1] is None:
             i += 1
         end_idx = i
+        num_missing = end_idx - start_idx - 1
 
-        if start_idx >= 0 and end_idx < len(frame_labels):
+        if start_idx >= 0 and end_idx < len(frame_labels) and num_missing <= max_hole_size:
             label_start = np.array(frame_labels[start_idx][1])
             label_end = np.array(frame_labels[end_idx][1])
-            num_missing = end_idx - start_idx - 1
             for j in range(num_missing):
                 t = (j + 1) / (num_missing + 1)
                 interp_label = slerp(label_start, label_end, t)
@@ -188,10 +186,10 @@ def process_folder(folder_path, segment_background=False, device='cpu', get_viz=
                 label_image(image_path, wb_override=interp_label, out_image_path=out_image_path)
                 interpolated_labels.append((interp_frame, interp_label.tolist()))
         else:
-            # skip at boundaries
+            # Hole too large or at boundary — discard
             for j in range(start_idx + 1, end_idx):
                 skipped_frame = frame_labels[j][0]
-                print(f"[WARN] Skipping frame '{skipped_frame}' due to unresolvable gap.")
+                print(f"[WARN] Skipping frame '{skipped_frame}' due to hole > {max_hole_size} or boundary.")
                 interpolated_labels.append((skipped_frame, None))
 
         if i < len(frame_labels):
@@ -208,7 +206,7 @@ def process_folder(folder_path, segment_background=False, device='cpu', get_viz=
             
             
             
-def process_all_folders_in_directory(root_path, segment_background=False, device='cpu', get_viz=False):
+def process_all_folders_in_directory(root_path, segment_background=False, device='cpu', get_viz=False, max_hole_size = 60):
     """
     Finds all folders in the root_path and applies process_folder() to each one in parallel.
     """
@@ -219,7 +217,7 @@ def process_all_folders_in_directory(root_path, segment_background=False, device
     ]
 
     args_list = [
-        (folder_path, segment_background, device, get_viz)
+        (folder_path, segment_background, device, get_viz,max_hole_size)
         for folder_path in folder_paths
     ]
 
@@ -234,5 +232,5 @@ if __name__ == "__main__":
         sys.exit(1)
         
     filename = sys.argv[1]
-    process_all_folders_in_directory(filename, device='cuda', get_viz=True, segment_background=False)
+    process_all_folders_in_directory(filename, device='cuda', get_viz=True, segment_background=False, max_hole_size= 60)
     
