@@ -8,6 +8,7 @@ import os
 import torch
 import torchvision
 from multiprocessing import Pool, cpu_count
+import shutil
 
 
 
@@ -127,9 +128,15 @@ def process_frame(image_path, out_csv_file=None, segment_background=False, devic
         print(f"[ERROR] Failed to process {image_path}: {e}")
         return None
     
-def process_folder(folder_path, segment_background=False, device='cpu', get_viz=False, max_hole_size=60):
+def process_folder(folder_path, segment_background=False, device='cpu', get_viz=False, max_hole_size=10):
     raw_png_folder = os.path.join(folder_path, "rgb_png")
     output_base_folder = os.path.join(folder_path, "processed_labeled_RGB_png")
+
+    # Delete the output folder if it already exists
+    if os.path.exists(output_base_folder):
+        print(f"[INFO] Deleting existing folder: {output_base_folder}")
+        shutil.rmtree(output_base_folder)
+
     output_image_folder = os.path.join(output_base_folder, "frames")
     output_csv_folder = os.path.join(output_base_folder, "CSVs")
 
@@ -203,6 +210,7 @@ def process_folder(folder_path, segment_background=False, device='cpu', get_viz=
             if label is not None:
                 f.write(f"{frame},{label[0]},{label[1]},{label[2]}\n")
 
+
             
             
             
@@ -232,5 +240,5 @@ if __name__ == "__main__":
         sys.exit(1)
         
     filename = sys.argv[1]
-    process_all_folders_in_directory(filename, device='cuda', get_viz=True, segment_background=False, max_hole_size= 60)
+    process_all_folders_in_directory(filename, device='cuda', get_viz=True, segment_background=False, max_hole_size= 30)
     
