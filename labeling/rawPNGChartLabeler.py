@@ -76,7 +76,7 @@ def label_image(image_path, out_csv_file=None, segment_background=False, device=
             print(f"[ERROR] No valid white triplets found in CSV for image: {image_path}")
             return None
 
-        white_triplet = np.mean(white_triplets, axis=0)
+        white_triplet = np.mean(white_triplets, axis=0) # Avarage all the white patches found in the image
 
 
         if get_viz and "White_coords" in df.columns:
