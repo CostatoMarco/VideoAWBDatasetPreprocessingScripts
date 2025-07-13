@@ -26,7 +26,14 @@ def load_wb_labels(folder_path):
     
     return df
 
-def plot_illuminant_timeline(df, save_path=None):
+def angular_distance_degrees(vec1, vec2):
+    # Both vec1 and vec2 should be normalized vectors
+    dot = np.clip(np.dot(vec1, vec2), -1.0, 1.0)
+    angle_rad = np.arccos(dot)
+    angle_deg = np.degrees(angle_rad)
+    return angle_deg
+
+def plot_illuminant_timeline(df, save_path=None, save_with_jumps_path=None, jump_threshold_deg=10.0):
     df_sorted = df.copy()
     df_sorted['frame_index'] = df_sorted['frame'].str.extract(r'(\d+)').astype(int)
     df_sorted = df_sorted.sort_values('frame_index')
@@ -45,7 +52,36 @@ def plot_illuminant_timeline(df, save_path=None):
 
     if save_path:
         plt.savefig(save_path, dpi=150)
-        print(f"Saved plot to: {save_path}")
+        print(f"[OK] Saved plot to: {save_path}")
+        plt.close()
+    else:
+        plt.show()
+
+
+    normalized = wb_array / np.linalg.norm(wb_array, axis=1, keepdims=True)
+    jumps = []
+    for i in range(1, len(normalized)):
+        angle = angular_distance_degrees(normalized[i - 1], normalized[i])
+        if angle > jump_threshold_deg:
+            jumps.append(i)
+
+    # Recreate plot with red lines for jumps
+    fig, ax = plt.subplots(figsize=(12, 2))
+    ax.imshow([rgb_colors], aspect='auto')
+    ax.set_yticks([])
+    ax.set_title(f"Illuminant Changes (> {jump_threshold_deg}°)")
+    ax.set_xlabel("Frame Index")
+
+    for x in jumps:
+        ax.axvline(x=x, color='red', linewidth=1)
+
+    ax.set_xticks(np.linspace(0, len(df_sorted)-1, 10))
+    ax.set_xticklabels(np.linspace(0, len(df_sorted)-1, 10, dtype=int))
+    plt.tight_layout()
+
+    if save_with_jumps_path:
+        plt.savefig(save_with_jumps_path, dpi=150)
+        print(f"[OK] Saved plot with jump markers to: {save_with_jumps_path}")
         plt.close()
     else:
         plt.show()
@@ -59,9 +95,10 @@ def process_all_folders(root_folder):
                 try:
                     df = load_wb_labels(subfolder_path)
                     save_path = os.path.join(subfolder_path, 'illuminant_timeline.png')
-                    plot_illuminant_timeline(df, save_path)
+                    jump_save_path = os.path.join(subfolder_path, 'illuminant_timeline_with_jumps.png')
+                    plot_illuminant_timeline(df, save_path, jump_save_path, 5.0)
                 except Exception as e:
-                    print(f"❌ Failed to process {subfolder_path}: {e}")
+                    print(f"[ERROR] Failed to process {subfolder_path}: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description="Generate illuminant timeline plots for all folders containing labels.csv.")
