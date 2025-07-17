@@ -179,7 +179,7 @@ def plot_drift_from_reference_white(df, reference_white, save_path=None):
         plt.show()
         
 
-def process_all_folders(root_folder):
+def process_all_folders(root_folder, suffix=""):
     for subfolder in os.listdir(root_folder):
         subfolder_path = os.path.join(root_folder, subfolder)
         if os.path.isdir(subfolder_path):
@@ -187,18 +187,18 @@ def process_all_folders(root_folder):
             if os.path.isfile(csv_path):
                 try:
                     df = load_wb_labels(subfolder_path)
-                    save_path = os.path.join(subfolder_path, 'illuminant_timeline.png')
-                    jump_save_path = os.path.join(subfolder_path, 'illuminant_timeline_with_jumps.png')
-                    plot_illuminant_timeline(df, save_path, jump_save_path, 5.0)
+                    save_path = os.path.join(subfolder_path, f'illuminant_timeline{suffix}.png')
+                    jump_save_path = os.path.join(subfolder_path, f'illuminant_timeline_with_jumps{suffix}.png')
+                    plot_illuminant_timeline(df, save_path, jump_save_path, 2.5)
                     plot_illuminant_drift_from_first(
                     df,
-                    save_path=os.path.join(subfolder_path, 'illuminant_drift_from_first.png')
+                    save_path=os.path.join(subfolder_path, f'illuminant_drift_from_first{suffix}.png')
                     )
                     reference_white = np.array([1.0, 1.0, 1.0])/math.sqrt(3)  # Normalized [1, 1, 1] white vector
                     plot_drift_from_reference_white(
                         df,
                         reference_white,
-                        save_path=os.path.join(subfolder_path, 'drift_from_reference_white.png')
+                        save_path=os.path.join(subfolder_path, f'drift_from_reference_white{suffix}.png')
                     )
                 except Exception as e:
                     print(f"[ERROR] Failed to process {subfolder_path}: {e}")
@@ -206,13 +206,14 @@ def process_all_folders(root_folder):
 def main():
     parser = argparse.ArgumentParser(description="Generate illuminant timeline plots for all folders containing labels.csv.")
     parser.add_argument("root_folder", type=str, help="Path to the top-level folder containing video subfolders.")
+    parser.add_argument("--suffix", type=str, default="", help="Suffix to append to the output filenames (default: empty).")
     args = parser.parse_args()
 
     if not os.path.isdir(args.root_folder):
         print(f"Error: '{args.root_folder}' is not a valid directory.")
         return
     
-    process_all_folders(args.root_folder)
+    process_all_folders(args.root_folder, suffix=args.suffix)
 
 if __name__ == "__main__":
     main()

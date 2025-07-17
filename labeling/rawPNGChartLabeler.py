@@ -23,6 +23,15 @@ def slerp(v0,v1,t):
     sin_omega = np.sin(omega)
     return (np.sin((1-t) * omega)/sin_omega) * v0 + (np.sin(t*omega) / sin_omega) * v1
 
+def angular_distance_deg(v1, v2):
+    v1 = np.array(v1, dtype=np.float32)
+    v2 = np.array(v2, dtype=np.float32)
+    v1 /= np.linalg.norm(v1)
+    v2 /= np.linalg.norm(v2)
+    dot_product = np.clip(np.dot(v1, v2), -1.0, 1.0)
+    angle_rad = np.arccos(dot_product)
+    return np.degrees(angle_rad)
+
 def worker(args):
     from rawPNGChartLabeler import process_folder  # if needed to avoid circular imports or global issues
     folder_path, segment_background, device, get_viz, max_hole_size = args
@@ -111,6 +120,34 @@ def label_image(image_path, out_csv_file=None, segment_background=False, device=
 
     return wbParameters.tolist()
 
+def remove_outliers_from_triplets(frame_labels, window=2, threshold_deg=25.0):
+    cleaned = frame_labels.copy()
+    n = len(frame_labels)
+
+    for i in range(n):
+        frame, label = frame_labels[i]
+        if label is None:
+            continue
+
+        neighbors = []
+        for offset in range(1, window + 1):
+            if i - offset >= 0 and frame_labels[i - offset][1] is not None:
+                neighbors.append(frame_labels[i - offset][1])
+            if i + offset < n and frame_labels[i + offset][1] is not None:
+                neighbors.append(frame_labels[i + offset][1])
+
+        if not neighbors:
+            continue  # No context to judge
+
+        dists = [angular_distance_deg(label, n_label) for n_label in neighbors]
+        avg_dist = np.mean(dists)
+
+        if avg_dist > threshold_deg:
+            print(f"[OUTLIER] Frame '{frame}' removed due to high angular distance ({avg_dist:.1f}°)")
+            cleaned[i] = (frame, None)
+
+    return cleaned
+
 
 def process_frame(image_path, out_csv_file=None, segment_background=False, device='cpu', get_viz=False, out_image_path=None, label_file=None):
     """
@@ -163,7 +200,10 @@ def process_folder(folder_path, segment_background=False, device='cpu', get_viz=
             out_image_path=out_image_path
         )
         frame_labels.append((filename, triplet))
-
+        
+        
+    frame_labels = remove_outliers_from_triplets(frame_labels, window=1, threshold_deg=2.5)
+    
     # SLERP interpolation with hole size check
     interpolated_labels = []
     i = 0
@@ -207,6 +247,7 @@ def process_folder(folder_path, segment_background=False, device='cpu', get_viz=
     with open(video_label_file, 'w') as f:
         f.write("frame,red,green,blue\n")
         for frame, label in interpolated_labels:
+        #for frame, label in frame_labels:
             if label is not None:
                 f.write(f"{frame},{label[0]},{label[1]},{label[2]}\n")
 
