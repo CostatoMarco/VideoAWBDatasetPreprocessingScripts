@@ -37,6 +37,7 @@ def annotate(image_path, out_file, segment_background, device, get_viz):
     if len(crops) == 0:
         raise RuntimeError("Error finding patches")
     
+    
     #crops = [crops[0]] # For now, only use the first prediction 
 
 
@@ -44,6 +45,8 @@ def annotate(image_path, out_file, segment_background, device, get_viz):
     for c in crops:
         crop = c[0]
         displacement = c[1]
+        y1,x1 = displacement
+        y2, x2 = y1 + crop.shape[0], x1 + crop.shape[1]
 
         try:
             mask = segment(crop, segmenter, device) if segment_background else None # Segment the image if needed
@@ -81,7 +84,10 @@ def annotate(image_path, out_file, segment_background, device, get_viz):
                 row["White_radius"] = r
 
 
-
+        row["bbox_y1"] = int(y1)
+        row["bbox_x1"] = int(x1)
+        row["bbox_y2"] = int(y2)
+        row["bbox_x2"] = int(x2)
 
         
         out.append(row) # Append the row to the output list
