@@ -202,8 +202,16 @@ def process_single_image(image_path):
         raw = load_bayer_image(image_path)
         raw = white_black_normalization(raw, image_path)
         rgb_base = downsample_demosaic_gbrg(raw)
+        
         raw_png_dir = os.path.dirname(image_path)
         parent_dir = os.path.dirname(raw_png_dir)
+        
+        # Save the demosaiced RGB image (before white balance)
+        demosaic_dir = os.path.join(parent_dir, "RGB_png")
+        os.makedirs(demosaic_dir, exist_ok=True)
+        demosaic_output_path = os.path.join(demosaic_dir, frame_name)
+        save_rgb_image(rgb_base, demosaic_output_path)
+
 
         for method in WB_METHODS:
             rgb = rgb_base.copy()
