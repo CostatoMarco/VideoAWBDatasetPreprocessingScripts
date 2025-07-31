@@ -123,12 +123,24 @@ def label_image(image_path, out_csv_file=None, segment_background=False, device=
 def remove_outliers_from_triplets(frame_labels, window=2, threshold_deg=25.0):
     cleaned = frame_labels.copy()
     n = len(frame_labels)
+    hole_length = 0
+    just_exited_hole = False
 
     for i in range(n):
         frame, label = frame_labels[i]
+
         if label is None:
+            hole_length += 1
+            just_exited_hole = False
             continue
 
+        if hole_length >= 30:
+            just_exited_hole = True
+        else:
+            just_exited_hole = False
+        hole_length = 0  # reset hole length since current is not None
+
+        # gather neighbors
         neighbors = []
         for offset in range(1, window + 1):
             if i - offset >= 0 and frame_labels[i - offset][1] is not None:
@@ -143,10 +155,12 @@ def remove_outliers_from_triplets(frame_labels, window=2, threshold_deg=25.0):
         avg_dist = np.mean(dists)
 
         if avg_dist > threshold_deg:
-            print(f"[OUTLIER] Frame '{frame}' removed due to high angular distance ({avg_dist:.1f}°)")
-            cleaned[i] = (frame, None)
+            if not just_exited_hole:
+                print(f"[OUTLIER] Frame '{frame}' removed due to high angular distance ({avg_dist:.1f}°)")
+                cleaned[i] = (frame, None)
 
     return cleaned
+
 
 
 def process_frame(image_path, out_csv_file=None, segment_background=False, device='cpu', get_viz=False, out_image_path=None, label_file=None):
@@ -202,52 +216,52 @@ def process_folder(folder_path, segment_background=False, device='cpu', get_viz=
         frame_labels.append((filename, triplet))
         
         
-    frame_labels = remove_outliers_from_triplets(frame_labels, window=1, threshold_deg=2.5)
+    frame_labels = remove_outliers_from_triplets(frame_labels, window=1, threshold_deg=2)
     
-    # SLERP interpolation with hole size check
-    interpolated_labels = []
-    i = 0
-    while i < len(frame_labels):
-        frame, label = frame_labels[i]
-        if label is not None:
-            interpolated_labels.append((frame, label))
-            i += 1
-            continue
+    # # SLERP interpolation with hole size check
+    # interpolated_labels = []
+    # i = 0
+    # while i < len(frame_labels):
+    #     frame, label = frame_labels[i]
+    #     if label is not None:
+    #         interpolated_labels.append((frame, label))
+    #         i += 1
+    #         continue
 
-        # Start of a hole
-        start_idx = i - 1
-        while i < len(frame_labels) and frame_labels[i][1] is None:
-            i += 1
-        end_idx = i
-        num_missing = end_idx - start_idx - 1
+    #     # Start of a hole
+    #     start_idx = i - 1
+    #     while i < len(frame_labels) and frame_labels[i][1] is None:
+    #         i += 1
+    #     end_idx = i
+    #     num_missing = end_idx - start_idx - 1
 
-        if start_idx >= 0 and end_idx < len(frame_labels) and num_missing <= max_hole_size:
-            label_start = np.array(frame_labels[start_idx][1])
-            label_end = np.array(frame_labels[end_idx][1])
-            for j in range(num_missing):
-                t = (j + 1) / (num_missing + 1)
-                interp_label = slerp(label_start, label_end, t)
-                interp_frame = frame_labels[start_idx + j + 1][0]
-                image_path = os.path.join(raw_png_folder, interp_frame)
-                out_image_path = os.path.join(output_image_folder, interp_frame)
-                label_image(image_path, wb_override=interp_label, out_image_path=out_image_path)
-                interpolated_labels.append((interp_frame, interp_label.tolist()))
-        else:
-            # Hole too large or at boundary — discard
-            for j in range(start_idx + 1, end_idx):
-                skipped_frame = frame_labels[j][0]
-                print(f"[WARN] Skipping frame '{skipped_frame}' due to hole > {max_hole_size} or boundary.")
-                interpolated_labels.append((skipped_frame, None))
+    #     if start_idx >= 0 and end_idx < len(frame_labels) and num_missing <= max_hole_size:
+    #         label_start = np.array(frame_labels[start_idx][1])
+    #         label_end = np.array(frame_labels[end_idx][1])
+    #         for j in range(num_missing):
+    #             t = (j + 1) / (num_missing + 1)
+    #             interp_label = slerp(label_start, label_end, t)
+    #             interp_frame = frame_labels[start_idx + j + 1][0]
+    #             image_path = os.path.join(raw_png_folder, interp_frame)
+    #             out_image_path = os.path.join(output_image_folder, interp_frame)
+    #             label_image(image_path, wb_override=interp_label, out_image_path=out_image_path)
+    #             interpolated_labels.append((interp_frame, interp_label.tolist()))
+    #     else:
+    #         # Hole too large or at boundary — discard
+    #         for j in range(start_idx + 1, end_idx):
+    #             skipped_frame = frame_labels[j][0]
+    #             print(f"[WARN] Skipping frame '{skipped_frame}' due to hole > {max_hole_size} or boundary.")
+    #             interpolated_labels.append((skipped_frame, None))
 
-        if i < len(frame_labels):
-            interpolated_labels.append((frame_labels[i][0], frame_labels[i][1]))
-            i += 1
+    #     if i < len(frame_labels):
+    #         interpolated_labels.append((frame_labels[i][0], frame_labels[i][1]))
+    #         i += 1
 
     # Save final CSV
     with open(video_label_file, 'w') as f:
         f.write("frame,red,green,blue\n")
-        for frame, label in interpolated_labels:
-        #for frame, label in frame_labels:
+        #for frame, label in interpolated_labels:
+        for frame, label in frame_labels:
             if label is not None:
                 f.write(f"{frame},{label[0]},{label[1]},{label[2]}\n")
 

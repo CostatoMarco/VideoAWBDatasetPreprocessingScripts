@@ -189,7 +189,7 @@ def process_all_folders(root_folder, suffix=""):
                     df = load_wb_labels(subfolder_path)
                     save_path = os.path.join(subfolder_path, f'illuminant_timeline{suffix}.png')
                     jump_save_path = os.path.join(subfolder_path, f'illuminant_timeline_with_jumps{suffix}.png')
-                    plot_illuminant_timeline(df, save_path, jump_save_path, 2.5)
+                    plot_illuminant_timeline(df, save_path, jump_save_path, 2)
                     plot_illuminant_drift_from_first(
                     df,
                     save_path=os.path.join(subfolder_path, f'illuminant_drift_from_first{suffix}.png')
