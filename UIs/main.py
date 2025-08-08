@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QFileDialog, QScrollArea, QHBoxLayout, QGridLayout, QStackedWidget
 )
 from PyQt5.QtGui import QPixmap, QImage
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent
 from imageViewer import FullImageWindow
 
 
@@ -18,6 +18,7 @@ class FileTile(QWidget):
     def __init__(self, folder_name, image_path, frames_path):
         super().__init__()
         self.frames_path = frames_path
+        self.current_frames_path = None  # Keep track of which folder is open
         layout = QVBoxLayout()
         self.setLayout(layout)
 
@@ -138,6 +139,7 @@ class MainApp(QWidget):
         
         
     def open_frames_folder(self, frames_path):
+        self.current_frames_path = frames_path  # Save path for refresh
         # Clear previous frames
         while self.frames_layout.count():
             child = self.frames_layout.takeAt(0)
@@ -152,6 +154,14 @@ class MainApp(QWidget):
 
         for img_file in images:
             full_path = os.path.join(frames_path, img_file)
+
+            # Create container widget for thumbnail + label
+            container = QWidget()
+            vbox = QVBoxLayout(container)
+            vbox.setContentsMargins(5, 5, 5, 5)
+            vbox.setSpacing(2)
+
+            # Clickable image
             thumb = self.ClickableImage(full_path)
             thumb.setAlignment(Qt.AlignCenter)
 
@@ -163,8 +173,18 @@ class MainApp(QWidget):
             qimg = QImage(img_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
             thumb.setPixmap(QPixmap.fromImage(qimg))
 
+            # Frame name label
+            name_label = QLabel(img_file)
+            name_label.setAlignment(Qt.AlignCenter)
+
+            # Add to container layout
+            vbox.addWidget(thumb)
+            vbox.addWidget(name_label)
+
+            # Connect click
             thumb.clicked.connect(self.open_full_image)
-            self.frames_layout.addWidget(thumb, row, col)
+
+            self.frames_layout.addWidget(container, row, col)
             col += 1
             if col >= self.grid_columns:
                 col = 0
@@ -190,6 +210,13 @@ class MainApp(QWidget):
     def open_full_image(self, image_path):
         viewer = FullImageWindow(image_path)
         viewer.exec_()
+        
+    def changeEvent(self, event):
+        if event.type() == QEvent.ActivationChange:
+            if self.isActiveWindow() and self.stack.currentWidget() == self.frames_view:
+                if self.current_frames_path:
+                    self.open_frames_folder(self.current_frames_path)
+        super().changeEvent(event)
 
 
 
