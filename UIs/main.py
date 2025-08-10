@@ -5,11 +5,12 @@ import os
 import cv2
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel,
-    QPushButton, QFileDialog, QScrollArea, QHBoxLayout, QGridLayout, QStackedWidget
+    QPushButton, QFileDialog, QScrollArea, QHBoxLayout, QGridLayout, QStackedWidget, QMessageBox
 )
 from PyQt5.QtGui import QPixmap, QImage
 from PyQt5.QtCore import Qt, pyqtSignal, QEvent
 from imageViewer import FullImageWindow
+import pandas as pd
 
 
 class FileTile(QWidget):
@@ -27,6 +28,8 @@ class FileTile(QWidget):
 
         self.img_label = QLabel()
         self.img_label.setAlignment(Qt.AlignCenter)
+        
+
 
         # Load and resize preview image
         img = cv2.imread(image_path)
@@ -61,6 +64,12 @@ class MainApp(QWidget):
 
         self.btn_load_folder = QPushButton("Select Root Folder")
         self.btn_load_folder.clicked.connect(self.load_folder)
+        self.btn_delete_mode = QPushButton("🗑 Delete Mode (Off)")
+        self.btn_delete_mode.setCheckable(True)
+        self.btn_delete_mode.clicked.connect(self.toggle_delete_mode)
+        self.delete_mode = False
+        
+
 
         self.stack = QStackedWidget()
         self.layout.addWidget(self.btn_load_folder)
@@ -79,9 +88,13 @@ class MainApp(QWidget):
         self.frames_view = QWidget()
         self.frames_main_layout = QVBoxLayout()      
         self.frames_view.setLayout(self.frames_main_layout)
+        
+
 
         self.btn_back = QPushButton("← Back to Folder View")
         self.btn_back.clicked.connect(self.back_to_root)
+        
+
 
         self.frames_grid_container = QWidget()
         self.frames_layout = QGridLayout()
@@ -94,8 +107,18 @@ class MainApp(QWidget):
         # Assemble the frames view
         self.frames_main_layout.addWidget(self.btn_back)
         self.frames_main_layout.addWidget(self.frames_scroll)
+        self.frames_main_layout.addWidget(self.btn_back)
+        self.frames_main_layout.addWidget(self.btn_delete_mode)
+        self.frames_main_layout.addWidget(self.frames_scroll)
 
         self.stack.addWidget(self.frames_view)
+        
+    def toggle_delete_mode(self):
+        self.delete_mode = self.btn_delete_mode.isChecked()
+        if self.delete_mode:
+            self.btn_delete_mode.setText("🗑 Delete Mode (On)")
+        else:
+            self.btn_delete_mode.setText("🗑 Delete Mode (Off)")
 
 
     def load_folder(self):
@@ -140,6 +163,8 @@ class MainApp(QWidget):
         
     def open_frames_folder(self, frames_path):
         self.current_frames_path = frames_path  # Save path for refresh
+        self.video_folder = os.path.dirname(os.path.dirname(frames_path))  # Root/<Video>
+        
         # Clear previous frames
         while self.frames_layout.count():
             child = self.frames_layout.takeAt(0)
@@ -148,14 +173,13 @@ class MainApp(QWidget):
 
         row = 0
         col = 0
-
         images = [f for f in sorted(os.listdir(frames_path))
                 if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
 
         for img_file in images:
             full_path = os.path.join(frames_path, img_file)
 
-            # Create container widget for thumbnail + label
+            # Create container widget
             container = QWidget()
             vbox = QVBoxLayout(container)
             vbox.setContentsMargins(5, 5, 5, 5)
@@ -164,6 +188,7 @@ class MainApp(QWidget):
             # Clickable image
             thumb = self.ClickableImage(full_path)
             thumb.setAlignment(Qt.AlignCenter)
+            thumb.clicked.connect(lambda path=full_path: self.image_clicked(path))
 
             img = cv2.imread(full_path)
             img = cv2.resize(img, (150, 150), interpolation=cv2.INTER_AREA)
@@ -173,16 +198,12 @@ class MainApp(QWidget):
             qimg = QImage(img_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
             thumb.setPixmap(QPixmap.fromImage(qimg))
 
-            # Frame name label
+            # Name label
             name_label = QLabel(img_file)
             name_label.setAlignment(Qt.AlignCenter)
 
-            # Add to container layout
             vbox.addWidget(thumb)
             vbox.addWidget(name_label)
-
-            # Connect click
-            thumb.clicked.connect(self.open_full_image)
 
             self.frames_layout.addWidget(container, row, col)
             col += 1
@@ -191,6 +212,41 @@ class MainApp(QWidget):
                 row += 1
 
         self.stack.setCurrentWidget(self.frames_view)
+        
+    def image_clicked(self, image_path):
+        if self.delete_mode:
+            reply = QMessageBox.question(
+                self, "Confirm Delete",
+                f"Delete {os.path.basename(image_path)} and related files?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                self.delete_image_and_data(image_path)
+                self.open_frames_folder(self.current_frames_path)  # Refresh view
+        else:
+            self.open_full_image(image_path)
+            
+    def delete_image_and_data(self, image_path):
+        img_name = os.path.basename(image_path)
+        img_stem = os.path.splitext(img_name)[0]
+
+        # 1) Delete image
+        if os.path.exists(image_path):
+            os.remove(image_path)
+
+        # 2) Delete CSV in CSVs folder
+        csvs_path = os.path.join(self.video_folder, "processed_labeled_RGB_png", "CSVs")
+        csv_file = os.path.join(csvs_path, f"{img_stem}.csv")
+        if os.path.exists(csv_file):
+            os.remove(csv_file)
+
+        # 3) Remove entry from labels.csv
+        labels_csv_path = os.path.join(self.video_folder, "labels.csv")
+        if os.path.exists(labels_csv_path):
+            df = pd.read_csv(labels_csv_path)
+            df = df[df["frame"] != img_name]
+            df.to_csv(labels_csv_path, index=False)
+
         
     def back_to_root(self):
         self.stack.setCurrentWidget(self.root_scroll)
