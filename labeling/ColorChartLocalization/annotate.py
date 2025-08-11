@@ -94,6 +94,72 @@ def annotate(image_path, out_file, segment_background, device, get_viz):
 
     df = pd.DataFrame(out) # Create a dataframe from the output list
     df.to_csv(out_file_name, index=False) # Save the dataframe to a csv file
+    
+    
+def save_detected_boxes(image_path, out_dir, device="cpu"):
+    """
+    Runs YOLO detection on an image and saves bounding boxes in CSV.
+    Only bbox_y1, bbox_x1, bbox_y2, bbox_x2 are saved.
+    
+    """
+    detector = YOLO(r'C:\Users\marco\Desktop\TesiAWB\labeling\ColorChartLocalization\ultralytics\runs\detect\train\weights\best.pt')
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Read image
+    img_bgr = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    if img_bgr is None:
+        raise ValueError(f"Could not read image {image_path}")
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+
+    # Run detection
+    crops = detect(img_rgb, detector, device)  # Your existing detect() method
+    if len(crops) == 0:
+        print(f"[WARN] No detections found for {image_path}")
+        return
+
+    out_rows = []
+    for c in crops:
+        _, displacement = c
+        y1, x1 = displacement
+        h, w = c[0].shape[:2]
+        y2 = y1 + h
+        x2 = x1 + w
+
+        out_rows.append({
+            "bbox_y1": int(y1),
+            "bbox_x1": int(x1),
+            "bbox_y2": int(y2),
+            "bbox_x2": int(x2)
+        })
+
+    # Build CSV path
+    base_name = os.path.splitext(os.path.basename(image_path))[0] + ".csv"
+    out_file = os.path.join(out_dir, base_name)
+
+    # Save CSV
+    pd.DataFrame(out_rows).to_csv(out_file, index=False)
+    print(f"[INFO] Saved: {out_file}")
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) < 3:
+        print("Usage: python save_boxes.py <images_folder> <weights_path>")
+        sys.exit(1)
+
+    images_folder = sys.argv[1]
+    weights_path = sys.argv[2]
+
+    detector = YOLO(weights_path)
+
+    # Walk through frames folder and save boxes in BoxesCSVs
+    for root, _, files in os.walk(images_folder):
+        if os.path.basename(root) == "frames":
+            boxes_csv_folder = os.path.join(os.path.dirname(root), "CSVs", "BoxesCSVs")
+            for fname in files:
+                if fname.lower().endswith(".png"):
+                    image_path = os.path.join(root, fname)
+                    save_detected_boxes(image_path, boxes_csv_folder, detector, device="cpu")
 
 if __name__ == "__main__":
     
