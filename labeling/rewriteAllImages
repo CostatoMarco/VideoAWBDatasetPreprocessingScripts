@@ -1,0 +1,110 @@
+import sys
+import os
+import re
+import numpy as np
+import cv2
+from multiprocessing import Pool, cpu_count
+
+# --- Apply white balance correction ---
+def label_image(image_path, wb_override, out_image_path):
+    rgb = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    if rgb is None:
+        raise ValueError(f"Could not read image: {image_path}")
+    rgb = rgb.astype(np.float32) / 255.0
+    wbParameters = np.array(wb_override, dtype=np.float32)
+    white_balanced_rgb = rgb / (wbParameters + 1e-6)
+    white_balanced_rgb = np.clip(white_balanced_rgb, 0, 1)
+    os.makedirs(os.path.dirname(out_image_path), exist_ok=True)
+    cv2.imwrite(out_image_path, (white_balanced_rgb * 255).astype(np.uint8))
+
+# --- Helpers ---
+def _parse_frame_index(frame_name):
+    digits = re.findall(r'(\d+)', frame_name)
+    if not digits:
+        raise ValueError(f"No digits found in frame name '{frame_name}'")
+    return int(digits[-1])
+
+def _format_frame_name(idx, pad):
+    return f"frame_{idx:0{pad}d}.png"
+
+# --- Worker process ---
+def worker(args):
+    folder_path, segment_background, device, get_viz, max_hole_size = args
+    try:
+        print(f"[INFO] Worker starting: {folder_path}")
+
+        raw_png_folder = os.path.join(folder_path, "rgb_png")
+        output_base_folder = os.path.join(folder_path, "processed_labeled_RGB_png")
+        output_image_folder = os.path.join(output_base_folder, "frames")
+        video_label_file = os.path.join(folder_path, "labels.csv")
+
+        if not os.path.exists(video_label_file):
+            print(f"[WARN] labels.csv not found in {folder_path} — skipping.")
+            return
+
+        # Load labels.csv
+        labels = {}
+        pad_width = None
+        with open(video_label_file, 'r') as fh:
+            header = fh.readline()
+            for ln in fh:
+                parts = ln.strip().split(',')
+                if len(parts) < 4:
+                    continue
+                frame_name = parts[0].strip()
+                try:
+                    idx = _parse_frame_index(frame_name)
+                    r, g, b = float(parts[1]), float(parts[2]), float(parts[3])
+                    labels[idx] = (frame_name, np.array([r, g, b], dtype=np.float32))
+                    # Detect padding
+                    ds = re.findall(r'(\d+)', frame_name)
+                    if ds:
+                        pad_width = len(ds[-1])
+                except Exception as e:
+                    print(f"[WARN] Skipping malformed line: {ln} ({e})")
+
+        if not labels:
+            print(f"[WARN] No valid labels in {video_label_file}.")
+            return
+        if pad_width is None:
+            pad_width = 5
+
+        # Rewrite all images
+        for idx in sorted(labels.keys()):
+            frame_name, wb_params = labels[idx]
+            raw_image_path = os.path.join(raw_png_folder, frame_name)
+            out_image_path = os.path.join(output_image_folder, frame_name)
+            if not os.path.exists(raw_image_path):
+                print(f"[WARN] Missing raw image for {frame_name}, skipping.")
+                continue
+            try:
+                label_image(raw_image_path, wb_override=wb_params, out_image_path=out_image_path)
+                print(f"[INFO] Rewrote {frame_name}")
+            except Exception as e:
+                print(f"[ERROR] Failed to rewrite {frame_name}: {e}")
+
+        print(f"[INFO] Finished rewriting all images for {folder_path}")
+
+    except Exception as e:
+        print(f"[ERROR] Worker failed on {folder_path}: {e}")
+
+# --- Multiprocessing driver ---
+def process_all_folders_in_directory(root_path, segment_background=False, device='cpu', get_viz=False, max_hole_size=60):
+    folder_paths = [
+        os.path.join(root_path, name)
+        for name in os.listdir(root_path)
+        if os.path.isdir(os.path.join(root_path, name))
+    ]
+    args_list = [
+        (folder_path, segment_background, device, get_viz, max_hole_size)
+        for folder_path in folder_paths
+    ]
+    with Pool(processes=min(cpu_count(), len(args_list))) as pool:
+        pool.map(worker, args_list)
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python rewriteAllImages.py <path_to_base_directory>")
+        sys.exit(1)
+    filename = sys.argv[1]
+    process_all_folders_in_directory(filename, device='cuda', get_viz=True, segment_background=False, max_hole_size=150)
